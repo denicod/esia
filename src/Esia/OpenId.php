@@ -29,6 +29,8 @@ class OpenId
 {
     use LoggerAwareTrait;
 
+    protected $clientCertHash = null;
+
     /**
      * @var SignerInterface
      */
@@ -114,6 +116,47 @@ class OpenId
         $request = http_build_query($params);
 
         return sprintf($url, $request);
+    }
+
+    /**
+     * Return an url for authentication
+     *
+     * ```php
+     *     <a href="<?=$esia->buildUrl()?>">Login</a>
+     * ```
+     *
+     * @return string|false
+     * @throws SignFailException
+     */
+    public function buildUrl_V2()
+    {
+        $timestamp = $this->getTimeStamp();
+        $state = $this->buildState();
+        // собираем client_secret по новым правилам
+        $message =  $this->config->getClientId()
+            . $this->config->getScopeString()
+            . $timestamp         
+            . $state         
+            . $this->config->getRedirectUrl();    
+        // используем алгоритм ГОСТ2012 для подписания     
+        $this->signer = new SignerCPDataHash(
+            $this->config
+        );
+        $clientSecret = $this->signer->sign($message);
+        $url = $this->config->getCodeUrl_V2() . '?%s';
+        $params = [
+            'client_id' => $this->config->getClientId(),
+            'client_secret' => $clientSecret,
+            'redirect_uri' => $this->config->getRedirectUrl(),
+            'scope' => $this->config->getScopeString(),
+            'response_type' => $this->config->getResponseType(),
+            'state' => $state,
+            'access_type' => $this->config->getAccessType(),
+            'timestamp' => $timestamp,
+            'client_certificate_hash' => $this->clientCertHash ?: '33EDEA88F481CD8E6533B391EE8C8BBF495B4CBDFD23F67FDF8C97D48331586A', // ГОСТ-хэш нашего сертификата     
+        ];
+        $request = http_build_query($params);      
+        return sprintf($url, $request); 
     }
 
     /**
